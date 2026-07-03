@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>India-first Voice ASR Tester</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="background-radial"></div>
+  
+  <header>
+    <div class="logo">
+      <span class="gradient-text">IndicVoice</span>
+      <span class="badge">ASR Sandbox</span>
+    </div>
+    <p class="subtitle">Validate local Hindi/Hinglish speech recognition latency & accuracy</p>
+  </header>
+
+  <main class="dashboard-grid">
+    <!-- Configuration Panel -->
+    <section class="card glass config-card">
+      <h2>1. Configuration</h2>
+      <div class="form-group">
+        <label for="modelSelect">Whisper Model Size</label>
+        <select id="modelSelect">
+          <option value="medium">Medium (~1.5GB) - High Accuracy, Hinglish Capable</option>
+          <option value="small" selected>Small (~460MB) - Recommended for Hindi</option>
+          <option value="base">Base (~140MB) - Fast, Script Issues</option>
+        </select>
+        <span class="help-text">Using local Metal-accelerated inference.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="langSelect">Language Parameter</label>
+        <select id="langSelect">
+          <option value="hi" selected>Forced Hindi (hi) - 30% Faster</option>
+          <option value="auto">Auto-Detect (auto)</option>
+        </select>
+        <span class="help-text">Always force the language in production to reduce latency.</span>
+      </div>
+
+      <div class="form-group checkbox-group">
+        <label class="checkbox-container">
+          <input type="checkbox" id="llmCorrectionToggle" checked>
+          <span style="font-weight: 500; color: #fff;">Enable LLM Correction</span>
+        </label>
+        <span class="help-text">Uses Gemini to fix Hinglish spelling errors (e.g., अपन्मेंट -> appointment).</span>
+      </div>
+    </section>
+
+    <!-- Testing Playground (Recorder & Upload) -->
+    <section class="card glass tester-card">
+      <h2>2. Speech Input</h2>
+      <div class="input-tabs">
+        <button class="tab-btn active" data-tab="record">Microphone</button>
+        <button class="tab-btn" data-tab="upload">Upload File</button>
+      </div>
+
+      <!-- Recording Section -->
+      <div class="tab-content" id="recordTab">
+        <div class="recorder-wrapper">
+          <canvas id="visualizer" width="300" height="80"></canvas>
+          <button id="recordBtn" class="record-btn">
+            <div class="record-icon"></div>
+          </button>
+          <p id="recorderStatus" class="status-text">Click to start recording</p>
+        </div>
+      </div>
+
+      <!-- File Upload Section -->
+      <div class="tab-content hidden" id="uploadTab">
+        <div id="dropzone" class="dropzone">
+          <div class="upload-icon">📁</div>
+          <p>Drag & drop an audio file or click to browse</p>
+          <span class="help-text">Supports WAV, MP3, WebM, OGG</span>
+          <input type="file" id="fileInput" accept="audio/*" class="hidden">
+        </div>
+        <div id="selectedFileInfo" class="selected-file-info hidden">
+          <p id="selectedFileName">file_name.wav</p>
+          <button id="clearFileBtn" class="btn-secondary">Remove</button>
+        </div>
+      </div>
+
+      <!-- Action Button -->
+      <button id="transcribeBtn" class="btn-primary" disabled>Transcribe Audio</button>
+    </section>
+
+    <!-- Results Panel -->
+    <section class="card glass results-card">
+      <h2>3. Transcription Output</h2>
+      <div id="loadingState" class="loading-state hidden">
+        <div class="spinner"></div>
+        <p>Running local inference on M4 GPU...</p>
+      </div>
+
+      <div id="resultsContent">
+        <div class="placeholder-text">
+          Select or record an audio file and hit Transcribe to see results.
+        </div>
+      </div>
+
+      <!-- Timing Metrics -->
+      <div id="metricsWrapper" class="metrics-wrapper hidden">
+        <hr class="separator">
+        <h3>Performance Metrics</h3>
+        <div class="metrics-grid">
+          <div class="metric-item">
+            <span class="metric-label">Model Load Time</span>
+            <span id="loadTimeMetric" class="metric-value">0 ms</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Inference Time</span>
+            <span id="transcribeTimeMetric" class="metric-value">0 ms</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Audio Duration</span>
+            <span id="audioDurationMetric" class="metric-value">0.0 s</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Real-Time Factor (RTF)</span>
+            <span id="rtfMetric" class="metric-value">0.00</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>India-first Voice Receptionist Platform Sandbox &copy; 2026</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
