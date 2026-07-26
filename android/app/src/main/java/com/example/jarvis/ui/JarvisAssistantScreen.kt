@@ -39,7 +39,8 @@ fun JarvisAssistantScreen() {
                 userTranscript = user
                 jarvisResponse = jarvis
             },
-            onVolumeChange = { audioVolume = it }
+            onVolumeChange = { audioVolume = it },
+            onSessionEnded = { isConnected = false }
         )
     }
 

@@ -18,7 +18,8 @@ class JarvisVoiceEngine(
     private val serverBaseUrl: String = "http://192.168.1.4:3000",
     private val onStatusUpdate: (String) -> Unit,
     private val onTranscript: (userText: String, jarvisText: String) -> Unit,
-    private val onVolumeChange: (Float) -> Unit
+    private val onVolumeChange: (Float) -> Unit,
+    private val onSessionEnded: () -> Unit = {}
 ) {
     private var isRecording = false
     private var job: Job? = null
@@ -48,7 +49,7 @@ class JarvisVoiceEngine(
     fun stopListening() {
         isRecording = false
         job?.cancel()
-        onStatusUpdate("Call disconnected.")
+        onStatusUpdate("Call ended.")
         onVolumeChange(0f)
     }
 
@@ -110,7 +111,7 @@ class JarvisVoiceEngine(
             savePcmToWav(pcmData, wavFile, SAMPLE_RATE)
             sendAudioToServer(wavFile)
         } else {
-            // Loop back to continue listening
+            // Loop back to continue listening if still active
             if (isRecording) {
                 recordAndProcessLoop()
             }
@@ -128,6 +129,8 @@ class JarvisVoiceEngine(
                 connectTimeout = 8000
                 readTimeout = 15000
             }
+
+            var taskExecuted = false
 
             try {
                 val outputStream = DataOutputStream(conn.outputStream)
@@ -158,13 +161,30 @@ class JarvisVoiceEngine(
 
                     withContext(Dispatchers.Main) {
                         onTranscript(userText, jarvisAnswer)
-                        onStatusUpdate("WebRTC Connected. Listening...")
 
-                        // Check for native OS action execution (e.g. Open WhatsApp)
-                        if (userText.lowercase().contains("open whatsapp") || userText.lowercase().contains("whatsapp open")) {
-                            NativeIntentHandler.openApp(context, "com.whatsapp", "WhatsApp")
-                        } else if (userText.lowercase().contains("message sagar") || userText.lowercase().contains("whatsapp message")) {
-                            NativeIntentHandler.sendWhatsAppMessage(context, "Sagar", "Hello from Jarvis Voice!")
+                        val lowerText = userText.lowercase()
+
+                        // Execute target OS Action and end session
+                        if (lowerText.contains("open whatsapp") || lowerText.contains("whatsapp open")) {
+                            taskExecuted = NativeIntentHandler.openApp(context, "com.whatsapp", "WhatsApp")
+                        } else if (lowerText.contains("open youtube") || lowerText.contains("youtube open")) {
+                            taskExecuted = NativeIntentHandler.openApp(context, "com.google.android.youtube", "YouTube")
+                        } else if (lowerText.contains("open spotify") || lowerText.contains("spotify open")) {
+                            taskExecuted = NativeIntentHandler.openApp(context, "com.spotify.music", "Spotify")
+                        } else if (lowerText.contains("open chrome") || lowerText.contains("chrome open")) {
+                            taskExecuted = NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
+                        } else if (lowerText.contains("message sagar") || lowerText.contains("whatsapp message")) {
+                            taskExecuted = NativeIntentHandler.sendWhatsAppMessage(context, "Sagar", "Hello from Jarvis Voice!")
+                        } else if (lowerText.contains("call") && lowerText.contains("sagar")) {
+                            taskExecuted = NativeIntentHandler.makePhoneCall(context, "1234567890")
+                        }
+
+                        if (taskExecuted) {
+                            onStatusUpdate("Task executed. Session ended.")
+                            stopListening()
+                            onSessionEnded()
+                        } else {
+                            onStatusUpdate("Connected. Listening...")
                         }
                     }
                 } else {
@@ -181,8 +201,8 @@ class JarvisVoiceEngine(
                 conn.disconnect()
             }
 
-            // Continue listening for next phrase
-            if (isRecording) {
+            // Continue listening for next phrase ONLY if no task was executed and still recording
+            if (isRecording && !taskExecuted) {
                 recordAndProcessLoop()
             }
         }
