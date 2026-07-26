@@ -12,14 +12,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.jarvis.actions.NativeIntentHandler
 import com.example.jarvis.ui.components.SiriOrbVisualizer
 
 @Composable
 fun JarvisAssistantScreen() {
+    val context = LocalContext.current
     var isConnected by remember { mutableStateOf(false) }
     var isListening by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("Tap mic or connect real-time call") }
@@ -77,8 +80,8 @@ fun JarvisAssistantScreen() {
             // Middle Visualizer Orb Section
             Box(
                 modifier = Modifier
-                    .size(280.dp)
-                    .padding(vertical = 16.dp),
+                    .size(260.dp)
+                    .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 SiriOrbVisualizer(
@@ -92,7 +95,7 @@ fun JarvisAssistantScreen() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -100,7 +103,7 @@ fun JarvisAssistantScreen() {
                     color = Color(0xFF94A3B8),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 if (userTranscript.isNotEmpty() || jarvisResponse.isNotEmpty()) {
@@ -109,7 +112,7 @@ fun JarvisAssistantScreen() {
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             if (userTranscript.isNotEmpty()) {
                                 Text(
                                     text = "You: $userTranscript",
@@ -119,7 +122,7 @@ fun JarvisAssistantScreen() {
                                 )
                             }
                             if (jarvisResponse.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "Jarvis: $jarvisResponse",
                                     color = Color(0xFF38BDF8),
@@ -133,13 +136,40 @@ fun JarvisAssistantScreen() {
             }
 
             // Bottom Action Controls
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Quick Test OS Action Chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            userTranscript = "Open WhatsApp"
+                            jarvisResponse = "Opening WhatsApp..."
+                            NativeIntentHandler.openApp(context, "com.whatsapp", "WhatsApp")
+                        },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("💬 Open WhatsApp", fontSize = 12.sp, color = Color.White)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            userTranscript = "Send WhatsApp message to Sagar"
+                            jarvisResponse = "Opening WhatsApp chat..."
+                            NativeIntentHandler.sendWhatsAppMessage(context, "Sagar", "Hello from Jarvis Voice Assistant!")
+                        },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("📩 Message Sagar", fontSize = 12.sp, color = Color.White)
+                    }
+                }
+
                 Button(
                     onClick = {
                         isConnected = !isConnected
@@ -156,8 +186,8 @@ fun JarvisAssistantScreen() {
                     ),
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .height(52.dp)
+                        .fillMaxWidth()
+                        .height(50.dp)
                 ) {
                     Text(
                         text = if (isConnected) "End WebRTC Call" else "📞 Connect Real-Time Siri Call",
