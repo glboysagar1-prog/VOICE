@@ -1,0 +1,13 @@
+# Exclude environment variables containing sensitive keys
+.env
+
+# Exclude heavy node modules and uploaded test audio files
+node_modules/
+uploads/
+
+# Exclude compiled whisper binaries and downloaded models
+whisper.cpp/
+
+# Exclude system files
+.DS_Store
+jarvis_memory.json
