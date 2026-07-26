@@ -18,16 +18,36 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jarvis.actions.NativeIntentHandler
+import com.example.jarvis.livekit.JarvisVoiceEngine
 import com.example.jarvis.ui.components.SiriOrbVisualizer
 
 @Composable
 fun JarvisAssistantScreen() {
     val context = LocalContext.current
     var isConnected by remember { mutableStateOf(false) }
-    var isListening by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("Tap mic or connect real-time call") }
+    var audioVolume by remember { mutableStateOf(0.1f) }
+    var statusText by remember { mutableStateOf("Tap button to connect Siri voice assistant") }
     var userTranscript by remember { mutableStateOf("") }
     var jarvisResponse by remember { mutableStateOf("") }
+
+    val voiceEngine = remember {
+        JarvisVoiceEngine(
+            context = context,
+            serverBaseUrl = "http://192.168.1.4:3000",
+            onStatusUpdate = { statusText = it },
+            onTranscript = { user, jarvis ->
+                userTranscript = user
+                jarvisResponse = jarvis
+            },
+            onVolumeChange = { audioVolume = it }
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceEngine.stopListening()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -68,7 +88,7 @@ fun JarvisAssistantScreen() {
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
-                        text = if (isConnected) "WebRTC Active" else "Offline",
+                        text = if (isConnected) "Active" else "Offline",
                         color = if (isConnected) Color(0xFF10B981) else Color.Gray,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         fontSize = 12.sp,
@@ -85,8 +105,8 @@ fun JarvisAssistantScreen() {
                 contentAlignment = Alignment.Center
             ) {
                 SiriOrbVisualizer(
-                    isListening = isListening || isConnected,
-                    audioVolume = if (isListening) 0.8f else 0.2f,
+                    isListening = isConnected,
+                    audioVolume = if (isConnected) audioVolume else 0.1f,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -174,11 +194,9 @@ fun JarvisAssistantScreen() {
                     onClick = {
                         isConnected = !isConnected
                         if (isConnected) {
-                            statusText = "WebRTC Call Connected. Listening..."
-                            userTranscript = "Vapi ke dental clinics ki list banao"
-                            jarvisResponse = "Vapi mein famous dental clinics hain: Smile Care Clinic, Apex Dental..."
+                            voiceEngine.startListening()
                         } else {
-                            statusText = "Call disconnected."
+                            voiceEngine.stopListening()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -190,7 +208,7 @@ fun JarvisAssistantScreen() {
                         .height(50.dp)
                 ) {
                     Text(
-                        text = if (isConnected) "End WebRTC Call" else "📞 Connect Real-Time Siri Call",
+                        text = if (isConnected) "End Siri Voice Session" else "📞 Connect Real-Time Siri Call",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
