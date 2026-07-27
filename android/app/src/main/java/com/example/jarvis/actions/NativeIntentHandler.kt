@@ -58,7 +58,7 @@ object NativeIntentHandler {
         }
     }
 
-    fun openApp(context: Context, packageName: String, appName: String = ""): Boolean {
+    fun openApp(context: Context, packageName: String, appName: String = "", data: String = ""): Boolean {
         val targetPackage = when {
             packageName.isNotBlank() -> packageName
             appName.lowercase().contains("whatsapp") -> "com.whatsapp"
@@ -66,6 +66,11 @@ object NativeIntentHandler {
             appName.lowercase().contains("spotify") -> "com.spotify.music"
             appName.lowercase().contains("chrome") -> "com.android.chrome"
             else -> packageName
+        }
+
+        // If data is provided (e.g. play song / search query), launch via YouTube deep link
+        if (targetPackage == "com.google.android.youtube" && data.isNotBlank()) {
+            return playYouTubeSong(context, data)
         }
 
         return try {
@@ -82,6 +87,22 @@ object NativeIntentHandler {
         } catch (e: Exception) {
             Log.e(TAG, "Error opening app: $targetPackage", e)
             false
+        }
+    }
+
+    fun playYouTubeSong(context: Context, query: String): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage("com.google.android.youtube")
+                putExtra("query", query)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Log.d(TAG, "Launched YouTube search for: $query")
+            true
+        } catch (e: Exception) {
+            // Fallback to standard launch
+            openApp(context, "com.google.android.youtube", "YouTube")
         }
     }
 

@@ -216,7 +216,10 @@ class JarvisVoiceEngine(
                             Log.d(TAG, "⚡ Executing AI action: type=$actionType, target=$actionTarget")
                             
                             taskExecuted = when (actionType) {
-                                "OPEN_APP" -> NativeIntentHandler.openApp(context, appPackageMap(actionTarget) ?: "", actionTarget)
+                                "OPEN_APP" -> {
+                                    val actionData = actionObj.optString("data", "")
+                                    NativeIntentHandler.openApp(context, appPackageMap(actionTarget) ?: "", actionTarget, actionData)
+                                }
                                 "CALL" -> NativeIntentHandler.makePhoneCall(context, actionTarget)
                                 "WHATSAPP_MSG" -> NativeIntentHandler.sendWhatsAppMessage(context, actionTarget, actionObj.optString("data", "Hello from Jarvis!"))
                                 "WEB_SEARCH" -> NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
