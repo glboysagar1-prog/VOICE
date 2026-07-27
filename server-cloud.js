@@ -136,34 +136,39 @@ async function transcribeWithGroqFallback(filePath) {
 async function getJarvisGeminiResponse(userText) {
   const lowerText = userText.toLowerCase();
   
-  // Rule-based fast action extraction
+  // Rule-based fast action extraction (Supports English + Devanagari Hindi!)
   let localAction = null;
   let localResponse = `I heard: "${userText}"`;
 
-  if (lowerText.includes('youtube')) {
-    const playMatch = lowerText.match(/play\s+(.+)/i);
+  const isYouTube = lowerText.includes('youtube') || lowerText.includes('यूट्यूब');
+  const isWhatsApp = lowerText.includes('whatsapp') || lowerText.includes('व्हाट्सएप') || lowerText.includes('व्हाट्सऐप');
+  const isSpotify = lowerText.includes('spotify') || lowerText.includes('स्पॉटीफाई');
+  const isChrome = lowerText.includes('chrome') || lowerText.includes('क्रोम') || lowerText.includes('google');
+  const isCamera = lowerText.includes('camera') || lowerText.includes('कैमरा');
+  const isCall = lowerText.includes('call') || lowerText.includes('कॉल');
+
+  if (isYouTube) {
+    const playMatch = lowerText.match(/(?:play|प्ले|सोंग|गाना)\s+(.+)/i);
     const dataQuery = playMatch ? playMatch[1] : '';
     localAction = { type: 'OPEN_APP', target: 'youtube', data: dataQuery };
     localResponse = dataQuery ? `Opening YouTube to play ${dataQuery}!` : 'Opening YouTube for you!';
-  } else if (lowerText.includes('whatsapp')) {
-    const msgMatch = lowerText.match(/text\s+(.+)|message\s+(.+)|to\s+(.+)/i);
-    const recipient = msgMatch ? (msgMatch[1] || msgMatch[2] || msgMatch[3]) : 'Sagar';
+  } else if (isWhatsApp) {
+    const msgMatch = lowerText.match(/(?:text|message|संदेश|मैसेज)\s+(.+)/i);
+    const recipient = msgMatch ? msgMatch[1] : 'Sagar';
     localAction = { type: 'WHATSAPP_MSG', target: recipient, data: 'Hello from Jarvis!' };
     localResponse = `Opening WhatsApp to message ${recipient}!`;
-  } else if (lowerText.includes('spotify')) {
+  } else if (isSpotify) {
     localAction = { type: 'OPEN_APP', target: 'spotify' };
     localResponse = 'Opening Spotify!';
-  } else if (lowerText.includes('chrome') || lowerText.includes('google')) {
+  } else if (isChrome) {
     localAction = { type: 'OPEN_APP', target: 'chrome' };
     localResponse = 'Opening Chrome browser!';
-  } else if (lowerText.includes('camera')) {
+  } else if (isCamera) {
     localAction = { type: 'OPEN_APP', target: 'camera' };
     localResponse = 'Opening Camera!';
-  } else if (lowerText.includes('call')) {
-    const callMatch = lowerText.match(/call\s+(.+)/i);
-    const target = callMatch ? callMatch[1] : 'Sagar';
-    localAction = { type: 'CALL', target: target };
-    localResponse = `Calling ${target}...`;
+  } else if (isCall) {
+    localAction = { type: 'CALL', target: 'Sagar' };
+    localResponse = 'Calling Sagar...';
   }
 
   if (!GEMINI_API_KEY) {
@@ -171,14 +176,18 @@ async function getJarvisGeminiResponse(userText) {
     return { response: localResponse, action: localAction, automation_steps: null };
   }
 
-  try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: `You are Jarvis, an intelligent voice assistant on an Android phone.
+  // Try multiple Gemini models in case of rate limits (gemini-2.0-flash -> gemini-1.5-flash -> gemini-2.5-flash)
+  const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+  
+  for (const model of models) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are Jarvis, an intelligent voice assistant on an Android phone.
 
 User said: "${userText}"
 
@@ -190,42 +199,38 @@ Task:
    - WHATSAPP_MSG: User wants to send a WhatsApp message.
    - WEB_SEARCH: User wants to search for something or play a song on YouTube.
 
-Examples:
-- "Youtube and play song" -> {"response": "Opening YouTube to play your song!", "action": {"type": "OPEN_APP", "target": "youtube", "data": "play song"}}
-- "open WhatsApp" -> {"response": "Opening WhatsApp for you.", "action": {"type": "OPEN_APP", "target": "whatsapp"}}
-- "Hello who are you" -> {"response": "I am Jarvis, your personal AI voice assistant!", "action": null}
-- "call Sagar" -> {"response": "Calling Sagar now.", "action": {"type": "CALL", "target": "Sagar"}}
-
-Respond ONLY in valid JSON format:
+Output ONLY valid JSON format:
 {
   "response": "Short verbal response here",
   "action": null OR { "type": "OPEN_APP|CALL|WHATSAPP_MSG|WEB_SEARCH", "target": "app_or_contact_name", "data": "optional" }
 }`
+            }]
           }]
-        }]
-      })
-    });
+        })
+      });
 
-    const data = await response.json();
-    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
-      let raw = data.candidates[0].content.parts[0].text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-      try {
-        const parsed = JSON.parse(raw);
-        return { 
-          response: parsed.response || localResponse, 
-          action: parsed.action || localAction,
-          automation_steps: parsed.automation_steps || null
-        };
-      } catch (_) {
-        return { response: raw, action: localAction, automation_steps: null };
+      const data = await response.json();
+      if (response.ok && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+        let raw = data.candidates[0].content.parts[0].text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        try {
+          const parsed = JSON.parse(raw);
+          return { 
+            response: parsed.response || localResponse, 
+            action: parsed.action || localAction,
+            automation_steps: parsed.automation_steps || null
+          };
+        } catch (_) {
+          return { response: raw, action: localAction, automation_steps: null };
+        }
       }
+      console.warn(`[Gemini Model ${model} Warning] Status ${response.status}:`, data.error?.message || 'Rate limited, trying next model...');
+    } catch (e) {
+      console.error(`[Gemini Error on ${model}]`, e);
     }
-    console.warn('[Gemini API Warning] Unexpected structure or error response:', JSON.stringify(data));
-    return { response: localResponse, action: localAction, automation_steps: null };
-  } catch (e) {
-    console.error('[Gemini Error]', e);
-    return { response: localResponse, action: localAction, automation_steps: null };
   }
+
+  // Fallback to local rule-based intent if all Gemini models are rate-limited
+  return { response: localResponse, action: localAction, automation_steps: null };
 }
 
 function cleanupFiles(files) {
