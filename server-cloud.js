@@ -153,7 +153,7 @@ async function getJarvisGeminiResponse(userText) {
     localAction = { type: 'OPEN_APP', target: 'youtube', data: dataQuery };
     localResponse = dataQuery ? `Opening YouTube to play ${dataQuery}!` : 'Opening YouTube for you!';
   } else if (isWhatsApp) {
-    const msgMatch = lowerText.match(/(?:text|message|संदेश|मैसेज)\s+(.+)/i);
+    const msgMatch = lowerText.match(/(?:text|message|संदेश|मैसेज|hii|hi|to)\s+(.+)/i);
     const recipient = msgMatch ? msgMatch[1] : 'Sagar';
     localAction = { type: 'WHATSAPP_MSG', target: recipient, data: 'Hello from Jarvis!' };
     localResponse = `Opening WhatsApp to message ${recipient}!`;
@@ -169,6 +169,12 @@ async function getJarvisGeminiResponse(userText) {
   } else if (isCall) {
     localAction = { type: 'CALL', target: 'Sagar' };
     localResponse = 'Calling Sagar...';
+  }
+
+  // FAST-PATH: If an action command was matched, return IMMEDIATELY (0ms latency, zero API rate limits!)
+  if (localAction !== null) {
+    console.log(`[JARVIS FAST-PATH] ⚡ Executing instant action: type=${localAction.type}, target=${localAction.target}`);
+    return { response: localResponse, action: localAction, automation_steps: null };
   }
 
   if (!GEMINI_API_KEY) {
