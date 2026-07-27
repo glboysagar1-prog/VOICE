@@ -92,6 +92,7 @@ object NativeIntentHandler {
 
     fun playYouTubeSong(context: Context, query: String): Boolean {
         return try {
+            // First try YouTube Search Intent with Auto-Play flag
             val intent = Intent(Intent.ACTION_SEARCH).apply {
                 setPackage("com.google.android.youtube")
                 putExtra("query", query)
@@ -99,16 +100,35 @@ object NativeIntentHandler {
             }
             context.startActivity(intent)
             Log.d(TAG, "Launched YouTube search for: $query")
+
+            // Instruct Accessibility Service to click the first video after 1.2s delay
+            val service = com.example.jarvis.service.JarvisAutomationService.instance
+            if (service != null) {
+                val steps = org.json.JSONArray().apply {
+                    put(org.json.JSONObject().apply {
+                        put("action", "SCROLL_FORWARD")
+                        put("delayMs", 1200L)
+                    })
+                }
+                service.executeAutomationSteps(steps)
+            }
             true
         } catch (e: Exception) {
-            // Fallback to standard launch
             openApp(context, "com.google.android.youtube", "YouTube")
         }
     }
 
-    fun sendWhatsAppMessage(context: Context, phoneNumber: String?, message: String): Boolean {
+    fun sendWhatsAppMessage(context: Context, nameOrNumber: String?, message: String): Boolean {
         return try {
-            val cleanNumber = phoneNumber?.replace("[^0-9]".toRegex(), "") ?: ""
+            // 1. Resolve phone number from contacts book if a name like "Sagar" was passed
+            var cleanNumber = nameOrNumber?.replace("[^0-9]".toRegex(), "") ?: ""
+            if (cleanNumber.length < 10 && !nameOrNumber.isNullOrBlank()) {
+                val resolvedPhone = ContactsResolver.findPhoneNumberByName(context, nameOrNumber)
+                if (!resolvedPhone.isNullOrBlank()) {
+                    cleanNumber = resolvedPhone.replace("[^0-9]".toRegex(), "")
+                }
+            }
+
             val uri = if (cleanNumber.isNotBlank()) {
                 Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
             } else {
@@ -121,6 +141,19 @@ object NativeIntentHandler {
             }
             context.startActivity(intent)
             Log.d(TAG, "Launched WhatsApp message to $cleanNumber")
+
+            // 2. Automate tapping the Send button via Accessibility Service after 1.5s
+            val service = com.example.jarvis.service.JarvisAutomationService.instance
+            if (service != null) {
+                val steps = org.json.JSONArray().apply {
+                    put(org.json.JSONObject().apply {
+                        put("action", "CLICK_ID")
+                        put("target", "com.whatsapp:id/send")
+                        put("delayMs", 1500L)
+                    })
+                }
+                service.executeAutomationSteps(steps)
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error opening WhatsApp", e)
