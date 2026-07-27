@@ -132,10 +132,34 @@ async function transcribeWithGroqFallback(filePath) {
   throw new Error('All Groq API keys in pool failed or reached rate limits.');
 }
 
-// Generate Gemini Response & Action Extraction
+// Generate Gemini Response & Action Extraction (with local Intent Fallback)
 async function getJarvisGeminiResponse(userText) {
+  const lowerText = userText.toLowerCase();
+  
+  // Rule-based fast action extraction
+  let localAction = null;
+  let localResponse = `Opening ${userText}...`;
+
+  if (lowerText.includes('youtube')) {
+    localAction = { type: 'OPEN_APP', target: 'youtube' };
+    localResponse = 'Opening YouTube for you!';
+  } else if (lowerText.includes('whatsapp')) {
+    localAction = { type: 'OPEN_APP', target: 'whatsapp' };
+    localResponse = 'Opening WhatsApp for you!';
+  } else if (lowerText.includes('spotify')) {
+    localAction = { type: 'OPEN_APP', target: 'spotify' };
+    localResponse = 'Opening Spotify!';
+  } else if (lowerText.includes('chrome') || lowerText.includes('google')) {
+    localAction = { type: 'OPEN_APP', target: 'chrome' };
+    localResponse = 'Opening Chrome browser!';
+  } else if (lowerText.includes('camera')) {
+    localAction = { type: 'OPEN_APP', target: 'camera' };
+    localResponse = 'Opening Camera!';
+  }
+
   if (!GEMINI_API_KEY) {
-    return { response: "Gemini API Key missing on server.", action: null };
+    console.warn('[JARVIS] GEMINI_API_KEY is not set on server. Using rule-based fallback.');
+    return { response: localResponse, action: localAction };
   }
 
   try {
@@ -174,19 +198,20 @@ Respond ONLY in valid JSON format:
     });
 
     const data = await response.json();
-    if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
       let raw = data.candidates[0].content.parts[0].text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
       try {
         const parsed = JSON.parse(raw);
-        return { response: parsed.response || raw, action: parsed.action || null };
+        return { response: parsed.response || localResponse, action: parsed.action || localAction };
       } catch (_) {
-        return { response: raw, action: null };
+        return { response: raw, action: localAction };
       }
     }
-    return { response: `I heard: "${userText}"`, action: null };
+    console.warn('[Gemini API Warning] Unexpected structure or error response:', JSON.stringify(data));
+    return { response: localResponse, action: localAction };
   } catch (e) {
     console.error('[Gemini Error]', e);
-    return { response: `Processed: "${userText}"`, action: null };
+    return { response: localResponse, action: localAction };
   }
 }
 
