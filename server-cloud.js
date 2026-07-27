@@ -104,7 +104,7 @@ async function transcribeWithGroqFallback(filePath) {
 
       formData.append('file', blob, 'audio.wav');
       formData.append('model', 'whisper-large-v3-turbo');
-      formData.append('prompt', 'Hinglish speech: Hello mera naam. YouTube open karo. WhatsApp pe message bhejo.');
+      formData.append('prompt', 'Transcribe natural Hinglish and English commands like open app, send message, call someone.');
       formData.append('temperature', '0.0');
 
       const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
