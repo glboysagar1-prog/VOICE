@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.jarvis.actions.NativeIntentHandler
+import com.example.jarvis.livekit.JarvisNativeSpeechEngine
 import com.example.jarvis.livekit.JarvisVoiceEngine
 import com.example.jarvis.ui.components.SiriOrbVisualizer
 
@@ -31,16 +32,14 @@ fun JarvisAssistantScreen() {
     var jarvisResponse by remember { mutableStateOf("") }
 
     val voiceEngine = remember {
-        JarvisVoiceEngine(
+        JarvisNativeSpeechEngine(
             context = context,
-            serverBaseUrl = "https://jarvis-voice-backend-rg2m.onrender.com",
             onStatusUpdate = { statusText = it },
             onTranscript = { user, jarvis ->
                 userTranscript = user
                 jarvisResponse = jarvis
             },
-            onVolumeChange = { audioVolume = it },
-            onSessionEnded = { isConnected = false }
+            onVolumeChange = { audioVolume = it }
         )
     }
 
