@@ -120,19 +120,23 @@ object NativeIntentHandler {
 
     fun sendWhatsAppMessage(context: Context, nameOrNumber: String?, message: String): Boolean {
         return try {
-            // 1. Resolve phone number from contacts book if a name like "Sagar" was passed
-            var cleanNumber = nameOrNumber?.replace("[^0-9]".toRegex(), "") ?: ""
-            if (cleanNumber.length < 10 && !nameOrNumber.isNullOrBlank()) {
-                val resolvedPhone = ContactsResolver.findPhoneNumberByName(context, nameOrNumber)
+            val contactName = nameOrNumber ?: "Sagar"
+            val textToSend = if (message.isNotBlank()) message else "Hii"
+
+            // 1. Try Direct Phone Number URI launch if phone number is resolved
+            var cleanNumber = contactName.replace("[^0-9]".toRegex(), "")
+            if (cleanNumber.length < 10 && contactName.isNotBlank()) {
+                val resolvedPhone = ContactsResolver.findPhoneNumberByName(context, contactName)
                 if (!resolvedPhone.isNullOrBlank()) {
                     cleanNumber = resolvedPhone.replace("[^0-9]".toRegex(), "")
                 }
             }
 
-            val uri = if (cleanNumber.isNotBlank()) {
-                Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
+            // Launch WhatsApp
+            val uri = if (cleanNumber.length >= 10) {
+                Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(textToSend)}")
             } else {
-                Uri.parse("https://api.whatsapp.com/send?text=${Uri.encode(message)}")
+                Uri.parse("https://api.whatsapp.com/send?text=${Uri.encode(textToSend)}")
             }
 
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
@@ -140,19 +144,37 @@ object NativeIntentHandler {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            Log.d(TAG, "Launched WhatsApp message to $cleanNumber")
+            Log.d(TAG, "Launched WhatsApp for $contactName with message: '$textToSend'")
 
-            // 2. Automate tapping the Send button via Accessibility Service after 1.5s
+            // 2. Full Accessibility UI Automation Pipeline
             val service = com.example.jarvis.service.JarvisAutomationService.instance
             if (service != null) {
-                val steps = org.json.JSONArray().apply {
-                    put(org.json.JSONObject().apply {
-                        put("action", "CLICK_ID")
-                        put("target", "com.whatsapp:id/send")
-                        put("delayMs", 1500L)
-                    })
-                }
-                service.executeAutomationSteps(steps)
+                Thread {
+                    try {
+                        Thread.sleep(1200L) // Wait for WhatsApp to open
+                        val root = service.rootInActiveWindow
+                        if (root != null) {
+                            // Step A: If contact chat isn't open yet, search for contact
+                            if (cleanNumber.length < 10) {
+                                Log.d(TAG, "🤖 Accessibility: Searching for contact '$contactName'...")
+                                service.clickById(root, "com.whatsapp:id/menuitem_search") || service.clickByText(root, "Search")
+                                Thread.sleep(600L)
+                                service.typeTextInFocusedOrId(service.rootInActiveWindow ?: root, contactName, "com.whatsapp:id/search_src_text")
+                                Thread.sleep(800L)
+                                service.clickByText(service.rootInActiveWindow ?: root, contactName)
+                                Thread.sleep(800L)
+                                service.typeTextInFocusedOrId(service.rootInActiveWindow ?: root, textToSend, "com.whatsapp:id/entry")
+                                Thread.sleep(600L)
+                            }
+                            
+                            // Step B: Tap Send Button
+                            Log.d(TAG, "🤖 Accessibility: Tapping Send button...")
+                            service.clickById(service.rootInActiveWindow ?: root, "com.whatsapp:id/send")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Accessibility automation step failed", e)
+                    }
+                }.start()
             }
             true
         } catch (e: Exception) {
