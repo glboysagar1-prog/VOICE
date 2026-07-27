@@ -206,41 +206,45 @@ class JarvisVoiceEngine(
                     withContext(Dispatchers.Main) {
                         onTranscript(userText, jarvisAnswer)
 
-                        // Use server-side Gemini action detection
+                        // Double-Layer Action Execution:
+                        // 1. Try Gemini AI action object
                         val actionObj = if (json.has("action") && !json.isNull("action")) json.optJSONObject("action") else null
                         
                         if (actionObj != null) {
                             val actionType = actionObj.optString("type", "")
                             val actionTarget = actionObj.optString("target", "")
-                            Log.d(TAG, "⚡ Executing action: type=$actionType, target=$actionTarget")
+                            Log.d(TAG, "⚡ Executing AI action: type=$actionType, target=$actionTarget")
                             
                             taskExecuted = when (actionType) {
-                                "OPEN_APP" -> {
-                                    val packageName = appPackageMap(actionTarget)
-                                    if (packageName != null) {
-                                        NativeIntentHandler.openApp(context, packageName, actionTarget)
-                                    } else {
-                                        Log.w(TAG, "Unknown app target: $actionTarget")
-                                        false
-                                    }
-                                }
-                                "CALL" -> {
-                                    NativeIntentHandler.makePhoneCall(context, actionTarget)
-                                    true
-                                }
-                                "WHATSAPP_MSG" -> {
-                                    val msgData = actionObj.optString("data", "Hello from Jarvis!")
-                                    NativeIntentHandler.sendWhatsAppMessage(context, actionTarget, msgData)
-                                }
-                                "WEB_SEARCH" -> {
-                                    NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
-                                    true
-                                }
+                                "OPEN_APP" -> NativeIntentHandler.openApp(context, appPackageMap(actionTarget) ?: "", actionTarget)
+                                "CALL" -> NativeIntentHandler.makePhoneCall(context, actionTarget)
+                                "WHATSAPP_MSG" -> NativeIntentHandler.sendWhatsAppMessage(context, actionTarget, actionObj.optString("data", "Hello from Jarvis!"))
+                                "WEB_SEARCH" -> NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
                                 else -> false
                             }
                         }
 
+                        // 2. Fallback: If AI action didn't execute, check user speech text directly
+                        if (!taskExecuted) {
+                            val lowerText = userText.lowercase()
+                            Log.d(TAG, "🔍 Fallback keyword check on text: '$lowerText'")
+                            if (lowerText.contains("youtube")) {
+                                taskExecuted = NativeIntentHandler.openApp(context, "com.google.android.youtube", "YouTube")
+                            } else if (lowerText.contains("whatsapp")) {
+                                taskExecuted = NativeIntentHandler.openApp(context, "com.whatsapp", "WhatsApp")
+                            } else if (lowerText.contains("spotify")) {
+                                taskExecuted = NativeIntentHandler.openApp(context, "com.spotify.music", "Spotify")
+                            } else if (lowerText.contains("chrome") || lowerText.contains("google")) {
+                                taskExecuted = NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
+                            } else if (lowerText.contains("camera")) {
+                                taskExecuted = NativeIntentHandler.openApp(context, "com.android.camera", "Camera")
+                            } else if (lowerText.contains("call") && lowerText.contains("sagar")) {
+                                taskExecuted = NativeIntentHandler.makePhoneCall(context, "1234567890")
+                            }
+                        }
+
                         if (taskExecuted) {
+                            Log.d(TAG, "🚀 Action EXECUTED successfully!")
                             onStatusUpdate("✅ Task executed. Session ended.")
                             stopListening()
                             onSessionEnded()
