@@ -138,14 +138,18 @@ async function getJarvisGeminiResponse(userText) {
   
   // Rule-based fast action extraction
   let localAction = null;
-  let localResponse = `Opening ${userText}...`;
+  let localResponse = `I heard: "${userText}"`;
 
   if (lowerText.includes('youtube')) {
-    localAction = { type: 'OPEN_APP', target: 'youtube' };
-    localResponse = 'Opening YouTube for you!';
+    const playMatch = lowerText.match(/play\s+(.+)/i);
+    const dataQuery = playMatch ? playMatch[1] : '';
+    localAction = { type: 'OPEN_APP', target: 'youtube', data: dataQuery };
+    localResponse = dataQuery ? `Opening YouTube to play ${dataQuery}!` : 'Opening YouTube for you!';
   } else if (lowerText.includes('whatsapp')) {
-    localAction = { type: 'OPEN_APP', target: 'whatsapp' };
-    localResponse = 'Opening WhatsApp for you!';
+    const msgMatch = lowerText.match(/text\s+(.+)|message\s+(.+)|to\s+(.+)/i);
+    const recipient = msgMatch ? (msgMatch[1] || msgMatch[2] || msgMatch[3]) : 'Sagar';
+    localAction = { type: 'WHATSAPP_MSG', target: recipient, data: 'Hello from Jarvis!' };
+    localResponse = `Opening WhatsApp to message ${recipient}!`;
   } else if (lowerText.includes('spotify')) {
     localAction = { type: 'OPEN_APP', target: 'spotify' };
     localResponse = 'Opening Spotify!';
@@ -155,11 +159,16 @@ async function getJarvisGeminiResponse(userText) {
   } else if (lowerText.includes('camera')) {
     localAction = { type: 'OPEN_APP', target: 'camera' };
     localResponse = 'Opening Camera!';
+  } else if (lowerText.includes('call')) {
+    const callMatch = lowerText.match(/call\s+(.+)/i);
+    const target = callMatch ? callMatch[1] : 'Sagar';
+    localAction = { type: 'CALL', target: target };
+    localResponse = `Calling ${target}...`;
   }
 
   if (!GEMINI_API_KEY) {
     console.warn('[JARVIS] GEMINI_API_KEY is not set on server. Using rule-based fallback.');
-    return { response: localResponse, action: localAction };
+    return { response: localResponse, action: localAction, automation_steps: null };
   }
 
   try {
