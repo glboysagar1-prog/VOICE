@@ -97,6 +97,32 @@ fun JarvisAssistantScreen() {
                 }
             }
 
+            // Accessibility UI Automation Status Check Card
+            val isAccessibilityActive = remember(isConnected) {
+                com.example.jarvis.service.JarvisAutomationService.isAccessibilityEnabled(context)
+            }
+
+            if (!isAccessibilityActive) {
+                Surface(
+                    onClick = { com.example.jarvis.service.JarvisAutomationService.openAccessibilitySettings(context) },
+                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "⚠️ Accessibility Service Disabled!\nTap here to enable Jarvis UI Automation.",
+                            color = Color(0xFFFCA5A5),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             // Middle Visualizer Orb Section
             Box(
                 modifier = Modifier

@@ -17,6 +17,21 @@ class JarvisAutomationService : AccessibilityService() {
             private set
 
         fun isServiceRunning(): Boolean = instance != null
+
+        fun isAccessibilityEnabled(context: android.content.Context): Boolean {
+            val enabledServices = android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            return enabledServices.contains(context.packageName)
+        }
+
+        fun openAccessibilitySettings(context: android.content.Context) {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
     }
 
     override fun onServiceConnected() {
