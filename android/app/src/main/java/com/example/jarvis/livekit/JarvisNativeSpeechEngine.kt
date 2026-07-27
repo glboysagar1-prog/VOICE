@@ -158,15 +158,18 @@ class JarvisNativeSpeechEngine(
 
         when {
             lowerText.contains("youtube") || lowerText.contains("यूट्यूब") -> {
-                val playMatch = lowerText.matchQuery("play", "प्ले", "गाना", "सोंग")
-                jarvisAnswer = if (playMatch.isNotBlank()) "Opening YouTube to play $playMatch!" else "Opening YouTube for you!"
-                taskExecuted = NativeIntentHandler.openApp(context, "com.google.android.youtube", "YouTube", playMatch)
+                val playQuery = lowerText.replace("open youtube", "").replace("youtube", "").replace("and play", "").replace("play", "").trim()
+                jarvisAnswer = if (playQuery.isNotBlank()) "Opening YouTube to play $playQuery!" else "Opening YouTube for you!"
+                taskExecuted = NativeIntentHandler.playYouTubeSong(context, playQuery.ifBlank { "paro" })
             }
             lowerText.contains("whatsapp") || lowerText.contains("व्हाट्सएप") || lowerText.contains("व्हाट्सऐप") -> {
-                val msgMatch = lowerText.matchQuery("message", "text", "संदेश", "मैसेज", "hii", "hi", "to")
-                val targetName = if (msgMatch.isNotBlank()) msgMatch else "Sagar"
-                jarvisAnswer = "Opening WhatsApp to message $targetName!"
-                taskExecuted = NativeIntentHandler.sendWhatsAppMessage(context, targetName, "Hello from Jarvis!")
+                var raw = lowerText.replace("open whatsapp", "").replace("whatsapp", "").replace("message", "").replace("text", "").replace("send", "").replace("to", "").trim()
+                val parts = raw.split(" ", limit = 2)
+                val targetName = if (parts.isNotEmpty() && parts[0].isNotBlank()) parts[0] else "Sagar"
+                val textToSend = if (parts.size > 1 && parts[1].isNotBlank()) parts[1] else "Hii"
+
+                jarvisAnswer = "Opening WhatsApp to message $targetName '$textToSend'!"
+                taskExecuted = NativeIntentHandler.sendWhatsAppMessage(context, targetName, textToSend)
             }
             lowerText.contains("spotify") || lowerText.contains("स्पॉटीफाई") -> {
                 jarvisAnswer = "Opening Spotify!"

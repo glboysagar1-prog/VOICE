@@ -171,25 +171,32 @@ object NativeIntentHandler {
 
     fun playYouTubeSong(context: Context, query: String): Boolean {
         return try {
-            // First try YouTube Search Intent with Auto-Play flag
-            val intent = Intent(Intent.ACTION_SEARCH).apply {
+            val searchUri = Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")
+            val intent = Intent(Intent.ACTION_VIEW, searchUri).apply {
                 setPackage("com.google.android.youtube")
-                putExtra("query", query)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            Log.d(TAG, "Launched YouTube search for: $query")
+            Log.d(TAG, "Launched YouTube URI search for: $query")
 
-            // Instruct Accessibility Service to click the first video after 1.2s delay
+            // Instruct Accessibility Service to tap top video thumbnail / title after 1.5s delay
             val service = com.example.jarvis.service.JarvisAutomationService.instance
             if (service != null) {
-                val steps = org.json.JSONArray().apply {
-                    put(org.json.JSONObject().apply {
-                        put("action", "SCROLL_FORWARD")
-                        put("delayMs", 1200L)
-                    })
-                }
-                service.executeAutomationSteps(steps)
+                Thread {
+                    try {
+                        Thread.sleep(1500L) // Wait for YouTube search results to render
+                        val root = service.rootInActiveWindow
+                        if (root != null) {
+                            Log.d(TAG, "🤖 Accessibility: Tapping top video for '$query'...")
+                            service.clickById(root, "com.google.android.youtube:id/title") ||
+                                    service.clickById(root, "com.google.android.youtube:id/thumbnail") ||
+                                    service.clickByText(root, query) ||
+                                    service.scroll(root, forward = true)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "YouTube video auto-play tap failed", e)
+                    }
+                }.start()
             }
             true
         } catch (e: Exception) {
@@ -233,25 +240,31 @@ object NativeIntentHandler {
                         Thread.sleep(1200L) // Wait for WhatsApp to open
                         val root = service.rootInActiveWindow
                         if (root != null) {
-                            // Step A: If contact chat isn't open yet, search for contact
                             if (cleanNumber.length < 10) {
-                                Log.d(TAG, "🤖 Accessibility: Searching for contact '$contactName'...")
+                                Log.d(TAG, "🤖 Accessibility: Searching for WhatsApp contact '$contactName'...")
                                 service.clickById(root, "com.whatsapp:id/menuitem_search") || service.clickByText(root, "Search")
                                 Thread.sleep(600L)
-                                service.typeTextInFocusedOrId(service.rootInActiveWindow ?: root, contactName, "com.whatsapp:id/search_src_text")
+                                val searchRoot = service.rootInActiveWindow ?: root
+                                service.typeTextInFocusedOrId(searchRoot, contactName, "com.whatsapp:id/search_src_text")
+                                Thread.sleep(900L)
+                                
+                                // Tap top contact result in WhatsApp list
+                                val listRoot = service.rootInActiveWindow ?: root
+                                service.clickByText(listRoot, contactName) || service.clickById(listRoot, "com.whatsapp:id/contact_name")
                                 Thread.sleep(800L)
-                                service.clickByText(service.rootInActiveWindow ?: root, contactName)
-                                Thread.sleep(800L)
-                                service.typeTextInFocusedOrId(service.rootInActiveWindow ?: root, textToSend, "com.whatsapp:id/entry")
+                                
+                                val chatRoot = service.rootInActiveWindow ?: root
+                                service.typeTextInFocusedOrId(chatRoot, textToSend, "com.whatsapp:id/entry")
                                 Thread.sleep(600L)
                             }
                             
-                            // Step B: Tap Send Button
-                            Log.d(TAG, "🤖 Accessibility: Tapping Send button...")
-                            service.clickById(service.rootInActiveWindow ?: root, "com.whatsapp:id/send")
+                            // Tap Send Button
+                            Log.d(TAG, "🤖 Accessibility: Tapping WhatsApp Send button...")
+                            val finalRoot = service.rootInActiveWindow ?: root
+                            service.clickById(finalRoot, "com.whatsapp:id/send")
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Accessibility automation step failed", e)
+                        Log.e(TAG, "WhatsApp Accessibility automation step failed", e)
                     }
                 }.start()
             }
