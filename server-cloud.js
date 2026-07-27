@@ -31,11 +31,18 @@ const GROQ_API_KEYS = rawKeys
 let currentKeyIndex = 0;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+function getNextGroqKey() {
+  if (GROQ_API_KEYS.length === 0) return null;
+  const key = GROQ_API_KEYS[currentKeyIndex];
+  currentKeyIndex = (currentKeyIndex + 1) % GROQ_API_KEYS.length;
+  return key;
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => res.json({ 
   status: 'ok', 
-  service: 'Jarvis Voice Backend', 
-  activeKeysCount: GROQ_API_KEYS.length 
+  service: 'Jarvis Voice Hybrid Backend', 
+  activeGroqKeysCount: GROQ_API_KEYS.length 
 }));
 
 // Main Android Jarvis Endpoint
@@ -177,65 +184,80 @@ async function getJarvisGeminiResponse(userText) {
     return { response: localResponse, action: localAction, automation_steps: null };
   }
 
-  if (!GEMINI_API_KEY) {
-    console.warn('[JARVIS] GEMINI_API_KEY is not set on server. Using rule-based fallback.');
-    return { response: localResponse, action: localAction, automation_steps: null };
+  // 1. Try Groq Llama 3.3 70B across active Groq API keys
+  if (GROQ_API_KEYS.length > 0) {
+    for (let attempt = 0; attempt < GROQ_API_KEYS.length; attempt++) {
+      const apiKey = getNextGroqKey();
+      if (!apiKey) break;
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            response_format: { type: 'json_object' },
+            messages: [
+              {
+                role: 'system',
+                content: `You are Jarvis, an advanced AI voice assistant for Android. Extract intent and return valid JSON with: response, action, and automation_steps.`
+              },
+              { role: 'user', content: userText }
+            ]
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.choices && data.choices[0] && data.choices[0].message) {
+          const raw = data.choices[0].message.content.trim();
+          const parsed = JSON.parse(raw);
+          console.log(`[JARVIS GROQ LLAMA-3.3] 🤖 Response generated via Key #${currentKeyIndex}`);
+          return {
+            response: parsed.response || localResponse,
+            action: parsed.action || localAction,
+            automation_steps: parsed.automation_steps || null
+          };
+        }
+      } catch (e) {
+        console.warn(`[Groq LLM Key Warning]`, e.message || e);
+      }
+    }
   }
 
-  // Try multiple Gemini models in case of rate limits (gemini-2.0-flash -> gemini-1.5-flash -> gemini-2.5-flash)
+  // 2. Try Gemini models if Groq fails or no keys available
   const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
-  
-  for (const model of models) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `You are Jarvis, an intelligent voice assistant on an Android phone.
-
-User said: "${userText}"
-
-Task:
-1. Provide a short, smart, conversational reply (1 sentence max).
-2. Detect if the user wants to execute an Android action:
-   - OPEN_APP: User wants to open or launch an app (e.g. YouTube, WhatsApp, Spotify, Chrome, Camera, Instagram, Settings, Maps, Phone, etc.).
-   - CALL: User wants to call a contact.
-   - WHATSAPP_MSG: User wants to send a WhatsApp message.
-   - WEB_SEARCH: User wants to search for something or play a song on YouTube.
-
-Output ONLY valid JSON format:
-{
-  "response": "Short verbal response here",
-  "action": null OR { "type": "OPEN_APP|CALL|WHATSAPP_MSG|WEB_SEARCH", "target": "app_or_contact_name", "data": "optional" }
-}`
+  if (GEMINI_API_KEY) {
+    for (const model of models) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are Jarvis, an intelligent voice assistant on an Android phone. User said: "${userText}". Output JSON with response, action, and automation_steps.`
+              }]
             }]
-          }]
-        })
-      });
+          })
+        });
 
-      const data = await response.json();
-      if (response.ok && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
-        let raw = data.candidates[0].content.parts[0].text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-        try {
+        const data = await response.json();
+        if (response.ok && data.candidates && data.candidates[0] && data.candidates[0].content) {
+          let raw = data.candidates[0].content.parts[0].text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
           const parsed = JSON.parse(raw);
           return { 
             response: parsed.response || localResponse, 
             action: parsed.action || localAction,
             automation_steps: parsed.automation_steps || null
           };
-        } catch (_) {
-          return { response: raw, action: localAction, automation_steps: null };
         }
-      }
-      console.warn(`[Gemini Model ${model} Warning] Status ${response.status}:`, data.error?.message || 'Rate limited, trying next model...');
-    } catch (e) {
-      console.error(`[Gemini Error on ${model}]`, e);
+      } catch (_) {}
     }
   }
 
-  // Fallback to local rule-based intent if all Gemini models are rate-limited
+  // 3. Fallback to local rule-based intent
   return { response: localResponse, action: localAction, automation_steps: null };
 }
 
