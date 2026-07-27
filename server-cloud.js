@@ -21,11 +21,22 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+// Read pool of Groq API Keys from environment variable (comma-separated)
+const rawKeys = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || '';
+const GROQ_API_KEYS = rawKeys
+  .split(',')
+  .map(k => k.trim())
+  .filter(Boolean);
+
+let currentKeyIndex = 0;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Health check endpoint
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'Jarvis Voice Backend' }));
+app.get('/health', (req, res) => res.json({ 
+  status: 'ok', 
+  service: 'Jarvis Voice Backend', 
+  activeKeysCount: GROQ_API_KEYS.length 
+}));
 
 // Main Android Jarvis Endpoint
 app.post('/api/jarvis', upload.single('audio'), async (req, res) => {
@@ -37,12 +48,12 @@ app.post('/api/jarvis', upload.single('audio'), async (req, res) => {
   console.log(`[JARVIS CLOUD] 📱 Request received: File=${req.file.originalname}, Size=${req.file.size} bytes`);
 
   try {
-    // 1. Transcribe with Groq Whisper API (whisper-large-v3-turbo)
+    // 1. Transcribe with Groq Whisper API (with multi-key failover pool)
     const startTime = Date.now();
-    const userText = await transcribeWithGroq(audioPath);
+    const userText = await transcribeWithGroqFallback(audioPath);
     const transcribeTimeMs = Date.now() - startTime;
 
-    console.log(`[JARVIS CLOUD] 🎤 Groq Transcribed: "${userText}" (${transcribeTimeMs}ms)`);
+    console.log(`[JARVIS CLOUD] 🎤 Transcribed: "${userText}" (${transcribeTimeMs}ms)`);
 
     cleanupFiles([audioPath]);
 
@@ -73,36 +84,53 @@ app.post('/api/jarvis', upload.single('audio'), async (req, res) => {
   }
 });
 
-// Transcribe Audio via Groq Whisper API
-async function transcribeWithGroq(filePath) {
-  if (!GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY environment variable is not configured.');
+// Transcribe Audio via Groq Whisper API with Multi-Key Failover
+async function transcribeWithGroqFallback(filePath) {
+  if (GROQ_API_KEYS.length === 0) {
+    throw new Error('GROQ_API_KEYS environment variable is missing or empty.');
   }
 
-  const formData = new FormData();
-  const fileBuffer = fs.readFileSync(filePath);
-  const blob = new Blob([fileBuffer], { type: 'audio/wav' });
+  let attempts = 0;
+  const maxAttempts = GROQ_API_KEYS.length;
 
-  formData.append('file', blob, 'audio.wav');
-  formData.append('model', 'whisper-large-v3-turbo');
-  formData.append('prompt', 'Hinglish speech: Hello mera naam. YouTube open karo. WhatsApp pe message bhejo.');
-  formData.append('temperature', '0.0');
+  while (attempts < maxAttempts) {
+    const apiKey = GROQ_API_KEYS[currentKeyIndex];
+    const keyLabel = `Key #${currentKeyIndex + 1} (${apiKey.substring(0, 8)}...)`;
 
-  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GROQ_API_KEY}`
-    },
-    body: formData
-  });
+    try {
+      const formData = new FormData();
+      const fileBuffer = fs.readFileSync(filePath);
+      const blob = new Blob([fileBuffer], { type: 'audio/wav' });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Groq API Error (${response.status}): ${errText}`);
+      formData.append('file', blob, 'audio.wav');
+      formData.append('model', 'whisper-large-v3-turbo');
+      formData.append('prompt', 'Hinglish speech: Hello mera naam. YouTube open karo. WhatsApp pe message bhejo.');
+      formData.append('temperature', '0.0');
+
+      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return (data.text || '').trim();
+      }
+
+      console.warn(`[Groq Fallback] ${keyLabel} returned HTTP ${response.status}. Rotating to next key...`);
+    } catch (err) {
+      console.warn(`[Groq Fallback] ${keyLabel} error: ${err.message}. Rotating to next key...`);
+    }
+
+    // Rotate to next key in the pool
+    currentKeyIndex = (currentKeyIndex + 1) % GROQ_API_KEYS.length;
+    attempts++;
   }
 
-  const data = await response.json();
-  return (data.text || '').trim();
+  throw new Error('All Groq API keys in pool failed or reached rate limits.');
 }
 
 // Generate Gemini Response & Action Extraction
@@ -168,5 +196,6 @@ function cleanupFiles(files) {
 app.listen(PORT, () => {
   console.log(`===============================================`);
   console.log(`🚀 Jarvis Cloud Backend listening on port ${PORT}`);
+  console.log(`🔑 Active Groq Key Pool Size: ${GROQ_API_KEYS.length}`);
   console.log(`===============================================`);
 });
