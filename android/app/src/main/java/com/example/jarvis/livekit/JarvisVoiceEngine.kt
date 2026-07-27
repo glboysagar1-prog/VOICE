@@ -15,7 +15,7 @@ import kotlin.math.sqrt
 
 class JarvisVoiceEngine(
     private val context: Context,
-    private val serverBaseUrl: String = "http://192.168.1.4:3000",
+    private val serverBaseUrl: String = "https://jarvis-voice-backend-rg2m.onrender.com",
     private val onStatusUpdate: (String) -> Unit,
     private val onTranscript: (userText: String, jarvisText: String) -> Unit,
     private val onVolumeChange: (Float) -> Unit,
@@ -71,9 +71,11 @@ class JarvisVoiceEngine(
         val byteArrayOutputStream = ByteArrayOutputStream()
         val buffer = ByteArray(minBufferSize)
         audioRecord.startRecording()
+        Log.d(TAG, "AudioRecord started, buffer size: ${minBufferSize}")
 
         var silenceStart = System.currentTimeMillis()
         var hasSpoken = false
+        var frameCount = 0
 
         while (isRecording) {
             val read = audioRecord.read(buffer, 0, buffer.size)
@@ -81,16 +83,23 @@ class JarvisVoiceEngine(
                 byteArrayOutputStream.write(buffer, 0, read)
                 val rms = calculateRMS(buffer, read)
                 val volume = (rms / 3000f).coerceIn(0f, 1f)
+                frameCount++
+                
+                // Log RMS every 20 frames (~1.25s) for debugging
+                if (frameCount % 20 == 0) {
+                    Log.d(TAG, "Audio frame #$frameCount: RMS=$rms, hasSpoken=$hasSpoken, totalBytes=${byteArrayOutputStream.size()}")
+                }
                 
                 withContext(Dispatchers.Main) {
                     onVolumeChange(volume)
                 }
 
-                if (rms > 800) {
+                if (rms > 500) {
+                    if (!hasSpoken) Log.d(TAG, "🎤 Speech DETECTED at frame #$frameCount (RMS=$rms)")
                     hasSpoken = true
                     silenceStart = System.currentTimeMillis()
-                } else if (hasSpoken && (System.currentTimeMillis() - silenceStart > 1200)) {
-                    // Silence threshold reached -> end of speech turn
+                } else if (hasSpoken && (System.currentTimeMillis() - silenceStart > 800)) {
+                    Log.d(TAG, "🔇 Silence detected after speech — sending audio (${byteArrayOutputStream.size()} bytes)")
                     break
                 }
             }
@@ -102,6 +111,8 @@ class JarvisVoiceEngine(
         if (!isRecording) return
 
         val pcmData = byteArrayOutputStream.toByteArray()
+        Log.d(TAG, "Recording stopped. Total PCM bytes: ${pcmData.size} (need >16000)")
+        
         if (pcmData.size > 16000) { // More than 0.5s of speech
             withContext(Dispatchers.Main) {
                 onStatusUpdate("Processing speech turn...")
@@ -109,9 +120,10 @@ class JarvisVoiceEngine(
 
             val wavFile = File(context.cacheDir, "speech_input.wav")
             savePcmToWav(pcmData, wavFile, SAMPLE_RATE)
+            Log.d(TAG, "📤 Sending WAV to server: ${wavFile.length()} bytes")
             sendAudioToServer(wavFile)
         } else {
-            // Loop back to continue listening if still active
+            Log.d(TAG, "⏭️ Too short (${pcmData.size} bytes), skipping — restarting loop")
             if (isRecording) {
                 recordAndProcessLoop()
             }
@@ -121,19 +133,23 @@ class JarvisVoiceEngine(
     private suspend fun sendAudioToServer(audioFile: File) {
         withContext(Dispatchers.IO) {
             val boundary = "---JarvisBoundary" + System.currentTimeMillis()
-            val url = URL("$serverBaseUrl/api/jarvis")
+            val targetUrl = "$serverBaseUrl/api/jarvis"
+            Log.d(TAG, "🌐 Connecting to: $targetUrl")
+            val url = URL(targetUrl)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                connectTimeout = 8000
-                readTimeout = 15000
+                connectTimeout = 10000
+                readTimeout = 30000
             }
 
             var taskExecuted = false
 
             try {
                 val outputStream = DataOutputStream(conn.outputStream)
+                
+                // Part 1: Audio file
                 outputStream.writeBytes("--$boundary\r\n")
                 outputStream.writeBytes("Content-Disposition: form-data; name=\"audio\"; filename=\"speech.wav\"\r\n")
                 outputStream.writeBytes("Content-Type: audio/wav\r\n\r\n")
@@ -146,6 +162,7 @@ class JarvisVoiceEngine(
                 }
                 fileInputStream.close()
 
+                // Part 2: Session ID
                 outputStream.writeBytes("\r\n--$boundary\r\n")
                 outputStream.writeBytes("Content-Disposition: form-data; name=\"sessionId\"\r\n\r\n")
                 outputStream.writeBytes("android-session-1\r\n")
@@ -153,8 +170,13 @@ class JarvisVoiceEngine(
                 outputStream.flush()
                 outputStream.close()
 
-                if (conn.responseCode == 200) {
+                Log.d(TAG, "📡 Request sent, waiting for response...")
+                val responseCode = conn.responseCode
+                Log.d(TAG, "📥 Server response code: $responseCode")
+
+                if (responseCode == 200) {
                     val responseText = conn.inputStream.bufferedReader().readText()
+                    Log.d(TAG, "📥 Server response body: $responseText")
                     val json = JSONObject(responseText)
                     val userText = json.optString("text", "")
                     val jarvisAnswer = json.optString("response", json.optString("correctedText", ""))
@@ -162,40 +184,59 @@ class JarvisVoiceEngine(
                     withContext(Dispatchers.Main) {
                         onTranscript(userText, jarvisAnswer)
 
-                        val lowerText = userText.lowercase()
-
-                        // Execute target OS Action and end session
-                        if (lowerText.contains("open whatsapp") || lowerText.contains("whatsapp open")) {
-                            taskExecuted = NativeIntentHandler.openApp(context, "com.whatsapp", "WhatsApp")
-                        } else if (lowerText.contains("open youtube") || lowerText.contains("youtube open")) {
-                            taskExecuted = NativeIntentHandler.openApp(context, "com.google.android.youtube", "YouTube")
-                        } else if (lowerText.contains("open spotify") || lowerText.contains("spotify open")) {
-                            taskExecuted = NativeIntentHandler.openApp(context, "com.spotify.music", "Spotify")
-                        } else if (lowerText.contains("open chrome") || lowerText.contains("chrome open")) {
-                            taskExecuted = NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
-                        } else if (lowerText.contains("message sagar") || lowerText.contains("whatsapp message")) {
-                            taskExecuted = NativeIntentHandler.sendWhatsAppMessage(context, "Sagar", "Hello from Jarvis Voice!")
-                        } else if (lowerText.contains("call") && lowerText.contains("sagar")) {
-                            taskExecuted = NativeIntentHandler.makePhoneCall(context, "1234567890")
+                        // Use server-side Gemini action detection
+                        val actionObj = if (json.has("action") && !json.isNull("action")) json.optJSONObject("action") else null
+                        
+                        if (actionObj != null) {
+                            val actionType = actionObj.optString("type", "")
+                            val actionTarget = actionObj.optString("target", "")
+                            Log.d(TAG, "⚡ Executing action: type=$actionType, target=$actionTarget")
+                            
+                            taskExecuted = when (actionType) {
+                                "OPEN_APP" -> {
+                                    val packageName = appPackageMap(actionTarget)
+                                    if (packageName != null) {
+                                        NativeIntentHandler.openApp(context, packageName, actionTarget)
+                                    } else {
+                                        Log.w(TAG, "Unknown app target: $actionTarget")
+                                        false
+                                    }
+                                }
+                                "CALL" -> {
+                                    NativeIntentHandler.makePhoneCall(context, actionTarget)
+                                    true
+                                }
+                                "WHATSAPP_MSG" -> {
+                                    val msgData = actionObj.optString("data", "Hello from Jarvis!")
+                                    NativeIntentHandler.sendWhatsAppMessage(context, actionTarget, msgData)
+                                }
+                                "WEB_SEARCH" -> {
+                                    NativeIntentHandler.openApp(context, "com.android.chrome", "Chrome")
+                                    true
+                                }
+                                else -> false
+                            }
                         }
 
                         if (taskExecuted) {
-                            onStatusUpdate("Task executed. Session ended.")
+                            onStatusUpdate("✅ Task executed. Session ended.")
                             stopListening()
                             onSessionEnded()
                         } else {
-                            onStatusUpdate("Connected. Listening...")
+                            onStatusUpdate("Listening... speak now")
                         }
                     }
                 } else {
+                    val errorBody = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { "unknown" }
+                    Log.e(TAG, "❌ Server error $responseCode: $errorBody")
                     withContext(Dispatchers.Main) {
-                        onStatusUpdate("Server Error: ${conn.responseCode}")
+                        onStatusUpdate("Server Error: $responseCode")
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to send audio payload", e)
+                Log.e(TAG, "❌ Failed to send audio payload", e)
                 withContext(Dispatchers.Main) {
-                    onStatusUpdate("Connection Failed: Check server IP")
+                    onStatusUpdate("Connection Failed: ${e.message}")
                 }
             } finally {
                 conn.disconnect()
@@ -205,6 +246,28 @@ class JarvisVoiceEngine(
             if (isRecording && !taskExecuted) {
                 recordAndProcessLoop()
             }
+        }
+    }
+
+    // Map Gemini-detected app names to Android package names
+    private fun appPackageMap(target: String): String? {
+        val lower = target.lowercase()
+        return when {
+            lower.contains("whatsapp") -> "com.whatsapp"
+            lower.contains("youtube") -> "com.google.android.youtube"
+            lower.contains("chrome") -> "com.android.chrome"
+            lower.contains("spotify") -> "com.spotify.music"
+            lower.contains("instagram") -> "com.instagram.android"
+            lower.contains("camera") -> "com.android.camera"
+            lower.contains("settings") -> "com.android.settings"
+            lower.contains("phone") || lower.contains("dialer") -> "com.google.android.dialer"
+            lower.contains("maps") -> "com.google.android.apps.maps"
+            lower.contains("gmail") -> "com.google.android.gm"
+            lower.contains("calendar") -> "com.google.android.calendar"
+            lower.contains("calculator") -> "com.miui.calculator"
+            lower.contains("gallery") -> "com.miui.gallery"
+            lower.contains("notes") -> "com.miui.notes"
+            else -> null
         }
     }
 

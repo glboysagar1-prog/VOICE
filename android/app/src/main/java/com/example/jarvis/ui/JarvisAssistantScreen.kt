@@ -33,7 +33,7 @@ fun JarvisAssistantScreen() {
     val voiceEngine = remember {
         JarvisVoiceEngine(
             context = context,
-            serverBaseUrl = "http://192.168.1.4:3000",
+            serverBaseUrl = "https://jarvis-voice-backend-rg2m.onrender.com",
             onStatusUpdate = { statusText = it },
             onTranscript = { user, jarvis ->
                 userTranscript = user
