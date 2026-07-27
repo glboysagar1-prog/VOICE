@@ -179,19 +179,25 @@ object NativeIntentHandler {
             context.startActivity(intent)
             Log.d(TAG, "Launched YouTube URI search for: $query")
 
-            // Instruct Accessibility Service to tap top video thumbnail / title after 1.5s delay
+            // Instruct Accessibility Service to perform screen gesture touch tap on top video after 2.0s
             val service = com.example.jarvis.service.JarvisAutomationService.instance
             if (service != null) {
                 Thread {
                     try {
-                        Thread.sleep(1500L) // Wait for YouTube search results to render
+                        Thread.sleep(2000L) // Wait for YouTube search results to render
                         val root = service.rootInActiveWindow
                         if (root != null) {
-                            Log.d(TAG, "🤖 Accessibility: Tapping top video for '$query'...")
-                            service.clickById(root, "com.google.android.youtube:id/title") ||
+                            Log.d(TAG, "🤖 Accessibility: Tapping top video thumbnail for '$query'...")
+                            // Try Node click first
+                            val nodeClicked = service.clickById(root, "com.google.android.youtube:id/title") ||
                                     service.clickById(root, "com.google.android.youtube:id/thumbnail") ||
-                                    service.clickByText(root, query) ||
-                                    service.scroll(root, forward = true)
+                                    service.clickByText(root, query)
+
+                            // Gesture fallback: Tap screen coordinates (Center X: 540, Y: 650) where YouTube top video thumbnail lives
+                            if (!nodeClicked) {
+                                Log.d(TAG, "🤖 Node tap failed, performing Accessibility screen gesture tap at (540, 650)...")
+                                service.clickCoordinates(540f, 650f)
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "YouTube video auto-play tap failed", e)

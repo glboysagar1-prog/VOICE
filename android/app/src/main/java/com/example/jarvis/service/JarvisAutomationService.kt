@@ -8,7 +8,6 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
-import org.json.JSONObject
 
 class JarvisAutomationService : AccessibilityService() {
 
@@ -26,9 +25,7 @@ class JarvisAutomationService : AccessibilityService() {
         Log.d(TAG, "🤖 Jarvis UI Automation Accessibility Service CONNECTED!")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Active listener for screen changes if needed
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {
         Log.w(TAG, "Jarvis Automation Service Interrupted.")
@@ -40,17 +37,6 @@ class JarvisAutomationService : AccessibilityService() {
         Log.d(TAG, "Jarvis Automation Service Destroyed.")
     }
 
-    /**
-     * Executes a series of UI automation steps passed from Jarvis AI backend.
-     * Example step JSON array:
-     * [
-     *   {"action": "CLICK_TEXT", "target": "Search"},
-     *   {"action": "TYPE_TEXT", "text": "Sagar"},
-     *   {"action": "CLICK_TEXT", "target": "Sagar"},
-     *   {"action": "TYPE_TEXT", "text": "Hey from Jarvis!"},
-     *   {"action": "CLICK_ID", "target": "com.whatsapp:id/send"}
-     * ]
-     */
     fun executeAutomationSteps(stepsJsonArray: JSONArray): Boolean {
         val rootNode = rootInActiveWindow ?: run {
             Log.e(TAG, "Cannot execute steps: Root window node is null")
@@ -121,6 +107,17 @@ class JarvisAutomationService : AccessibilityService() {
             temp = temp.parent
         }
         return false
+    }
+
+    fun clickCoordinates(x: Float, y: Float): Boolean {
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, 100)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        val dispatched = dispatchGesture(gesture, null, null)
+        Log.d(TAG, "Dispatched gesture tap at ($x, $y): success=$dispatched")
+        return dispatched
     }
 
     fun typeTextInFocusedOrId(node: AccessibilityNodeInfo, textToType: String, viewId: String = ""): Boolean {
