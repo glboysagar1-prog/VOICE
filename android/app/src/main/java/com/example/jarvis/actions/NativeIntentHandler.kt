@@ -59,18 +59,29 @@ object NativeIntentHandler {
     }
 
     fun openApp(context: Context, packageName: String, appName: String = "", data: String = ""): Boolean {
-        val targetPackage = when {
-            packageName.isNotBlank() -> packageName
-            appName.lowercase().contains("whatsapp") -> "com.whatsapp"
-            appName.lowercase().contains("youtube") -> "com.google.android.youtube"
-            appName.lowercase().contains("spotify") -> "com.spotify.music"
-            appName.lowercase().contains("chrome") -> "com.android.chrome"
-            else -> packageName
+        var targetPackage = packageName.ifBlank { resolveInstalledPackageName(context, appName) }
+
+        if (targetPackage.isBlank() && appName.isNotBlank()) {
+            targetPackage = when {
+                appName.lowercase().contains("whatsapp") -> "com.whatsapp"
+                appName.lowercase().contains("youtube") -> "com.google.android.youtube"
+                appName.lowercase().contains("spotify") -> "com.spotify.music"
+                appName.lowercase().contains("chrome") -> "com.android.chrome"
+                appName.lowercase().contains("instagram") -> "com.instagram.android"
+                appName.lowercase().contains("camera") -> "com.android.camera"
+                appName.lowercase().contains("settings") -> "com.android.settings"
+                else -> ""
+            }
         }
 
-        // If data is provided (e.g. play song / search query), launch via YouTube deep link
-        if (targetPackage == "com.google.android.youtube" && data.isNotBlank()) {
-            return playYouTubeSong(context, data)
+        if (targetPackage.isBlank()) {
+            Log.e(TAG, "Could not resolve package name for app: '$appName'")
+            return false
+        }
+
+        // If data query is provided (e.g. search / play song), perform in-app search via Accessibility
+        if (data.isNotBlank()) {
+            return performAppSearchAndAct(context, targetPackage, data)
         }
 
         return try {
@@ -86,6 +97,74 @@ object NativeIntentHandler {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error opening app: $targetPackage", e)
+            false
+        }
+    }
+
+    /**
+     * Universal Installed Package Resolver: Finds package name of ANY app installed on the phone by app name.
+     */
+    fun resolveInstalledPackageName(context: Context, appName: String): String {
+        if (appName.isBlank()) return ""
+        val lowerName = appName.lowercase().trim()
+        return try {
+            val pm = context.packageManager
+            val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            for (appInfo in packages) {
+                val label = pm.getApplicationLabel(appInfo).toString().lowercase()
+                if (label == lowerName || label.contains(lowerName)) {
+                    Log.d(TAG, "Resolved '$appName' to installed package: ${appInfo.packageName}")
+                    return appInfo.packageName
+                }
+            }
+            ""
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resolving package name for '$appName'", e)
+            ""
+        }
+    }
+
+    /**
+     * Universal In-App Accessibility Search: Launches ANY app, finds search field, types query, and taps top result.
+     */
+    fun performAppSearchAndAct(context: Context, packageName: String, searchQuery: String): Boolean {
+        return try {
+            val intent = context.packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            } ?: return false
+            context.startActivity(intent)
+
+            val service = com.example.jarvis.service.JarvisAutomationService.instance
+            if (service != null) {
+                Thread {
+                    try {
+                        Thread.sleep(1400L) // Wait for target app to load UI
+                        val root = service.rootInActiveWindow
+                        if (root != null) {
+                            Log.d(TAG, "🤖 Accessibility: Initiating universal search for '$searchQuery' in $packageName...")
+                            // Try finding search button / search input
+                            val searchFound = service.clickById(root, "$packageName:id/search") ||
+                                    service.clickById(root, "$packageName:id/menuitem_search") ||
+                                    service.clickByText(root, "Search") ||
+                                    service.clickByText(root, "Find")
+
+                            Thread.sleep(800L)
+                            val searchInputRoot = service.rootInActiveWindow ?: root
+                            service.typeTextInFocusedOrId(searchInputRoot, searchQuery)
+                            Thread.sleep(800L)
+
+                            // Click top search result or press ENTER
+                            val resultRoot = service.rootInActiveWindow ?: root
+                            service.clickByText(resultRoot, searchQuery) || service.scroll(resultRoot, forward = true)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Universal app search failed", e)
+                    }
+                }.start()
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error performing in-app search for $packageName", e)
             false
         }
     }
