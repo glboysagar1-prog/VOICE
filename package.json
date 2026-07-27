@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:cloud": "node server-cloud.js",
     "dev": "node server.js"
   },
   "dependencies": {
