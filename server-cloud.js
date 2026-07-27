@@ -104,7 +104,6 @@ async function transcribeWithGroqFallback(filePath) {
 
       formData.append('file', blob, 'audio.wav');
       formData.append('model', 'whisper-large-v3-turbo');
-      formData.append('prompt', 'Transcribe natural Hinglish and English commands like open app, send message, call someone.');
       formData.append('temperature', '0.0');
 
       const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -146,22 +145,28 @@ async function getJarvisGeminiResponse(userText) {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `You are Jarvis, an AI voice assistant running on an Android phone. The user spoke to you.
+            text: `You are Jarvis, an intelligent voice assistant on an Android phone.
 
 User said: "${userText}"
 
-Respond as a helpful, concise voice assistant (1-2 short sentences max).
+Task:
+1. Provide a short, smart, conversational reply (1 sentence max).
+2. Detect if the user wants to execute an Android action:
+   - OPEN_APP: User wants to open or launch an app (e.g. YouTube, WhatsApp, Spotify, Chrome, Camera, Instagram, Settings, Maps, Phone, etc.).
+   - CALL: User wants to call a contact.
+   - WHATSAPP_MSG: User wants to send a WhatsApp message.
+   - WEB_SEARCH: User wants to search for something or play a song on YouTube.
 
-Detect if user wants to perform an Android action:
-- Open app (WhatsApp, YouTube, Chrome, Spotify, Instagram, Settings, Camera, etc.)
-- Make phone call
-- Send WhatsApp message
-- Search web
+Examples:
+- "Youtube and play song" -> {"response": "Opening YouTube to play your song!", "action": {"type": "OPEN_APP", "target": "youtube", "data": "play song"}}
+- "open WhatsApp" -> {"response": "Opening WhatsApp for you.", "action": {"type": "OPEN_APP", "target": "whatsapp"}}
+- "Hello who are you" -> {"response": "I am Jarvis, your personal AI voice assistant!", "action": null}
+- "call Sagar" -> {"response": "Calling Sagar now.", "action": {"type": "CALL", "target": "Sagar"}}
 
-Output ONLY valid JSON:
+Respond ONLY in valid JSON format:
 {
-  "response": "Your response text",
-  "action": null or { "type": "OPEN_APP|CALL|WHATSAPP_MSG|WEB_SEARCH", "target": "app_name_or_contact", "data": "optional_data" }
+  "response": "Short verbal response here",
+  "action": null OR { "type": "OPEN_APP|CALL|WHATSAPP_MSG|WEB_SEARCH", "target": "app_or_contact_name", "data": "optional" }
 }`
           }]
         }]
@@ -178,10 +183,10 @@ Output ONLY valid JSON:
         return { response: raw, action: null };
       }
     }
-    return { response: "I heard you!", action: null };
+    return { response: `I heard: "${userText}"`, action: null };
   } catch (e) {
     console.error('[Gemini Error]', e);
-    return { response: "Processing error.", action: null };
+    return { response: `Processed: "${userText}"`, action: null };
   }
 }
 

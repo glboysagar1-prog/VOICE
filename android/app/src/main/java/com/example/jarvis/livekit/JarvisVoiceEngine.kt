@@ -74,33 +74,55 @@ class JarvisVoiceEngine(
         Log.d(TAG, "AudioRecord started, buffer size: ${minBufferSize}")
 
         var silenceStart = System.currentTimeMillis()
+        var speechStart = System.currentTimeMillis()
         var hasSpoken = false
         var frameCount = 0
+
+        // Ring buffer to hold 300ms of pre-roll audio (~9600 bytes at 16kHz 16-bit mono)
+        val preRollSize = 9600
+        val preRollBuffer = ByteArrayOutputStream()
 
         while (isRecording) {
             val read = audioRecord.read(buffer, 0, buffer.size)
             if (read > 0) {
-                byteArrayOutputStream.write(buffer, 0, read)
                 val rms = calculateRMS(buffer, read)
                 val volume = (rms / 3000f).coerceIn(0f, 1f)
                 frameCount++
-                
-                // Log RMS every 20 frames (~1.25s) for debugging
-                if (frameCount % 20 == 0) {
-                    Log.d(TAG, "Audio frame #$frameCount: RMS=$rms, hasSpoken=$hasSpoken, totalBytes=${byteArrayOutputStream.size()}")
-                }
                 
                 withContext(Dispatchers.Main) {
                     onVolumeChange(volume)
                 }
 
-                if (rms > 500) {
-                    if (!hasSpoken) Log.d(TAG, "🎤 Speech DETECTED at frame #$frameCount (RMS=$rms)")
-                    hasSpoken = true
+                if (rms > 1200) {
+                    if (!hasSpoken) {
+                        Log.d(TAG, "🎤 Speech DETECTED at frame #$frameCount (RMS=$rms)")
+                        speechStart = System.currentTimeMillis()
+                        hasSpoken = true
+                        // Write pre-roll buffer first, then start accumulating voice
+                        byteArrayOutputStream.write(preRollBuffer.toByteArray())
+                    }
                     silenceStart = System.currentTimeMillis()
-                } else if (hasSpoken && (System.currentTimeMillis() - silenceStart > 800)) {
-                    Log.d(TAG, "🔇 Silence detected after speech — sending audio (${byteArrayOutputStream.size()} bytes)")
-                    break
+                }
+
+                if (hasSpoken) {
+                    byteArrayOutputStream.write(buffer, 0, read)
+                    if (System.currentTimeMillis() - silenceStart > 700) {
+                        Log.d(TAG, "🔇 Silence detected after speech — sending audio (${byteArrayOutputStream.size()} bytes)")
+                        break
+                    }
+                    if (System.currentTimeMillis() - speechStart > 5000) {
+                        Log.d(TAG, "⏱️ Max 5s speech limit reached — sending audio (${byteArrayOutputStream.size()} bytes)")
+                        break
+                    }
+                } else {
+                    // Keep last 300ms in pre-roll buffer
+                    preRollBuffer.write(buffer, 0, read)
+                    if (preRollBuffer.size() > preRollSize) {
+                        val overflow = preRollBuffer.size() - preRollSize
+                        val bytes = preRollBuffer.toByteArray()
+                        preRollBuffer.reset()
+                        preRollBuffer.write(bytes, overflow, preRollSize)
+                    }
                 }
             }
         }
