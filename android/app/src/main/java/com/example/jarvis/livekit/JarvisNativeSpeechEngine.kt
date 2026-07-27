@@ -172,8 +172,9 @@ class JarvisNativeSpeechEngine(
                 taskExecuted = NativeIntentHandler.sendWhatsAppMessage(context, targetName, textToSend)
             }
             lowerText.contains("spotify") || lowerText.contains("स्पॉटीफाई") -> {
-                jarvisAnswer = "Opening Spotify!"
-                taskExecuted = NativeIntentHandler.openApp(context, "com.spotify.music", "Spotify")
+                val songQuery = lowerText.replace("open spotify", "").replace("spotify", "").replace("and play", "").replace("play", "").replace("song", "").trim()
+                jarvisAnswer = if (songQuery.isNotBlank()) "Opening Spotify to play $songQuery!" else "Opening Spotify!"
+                taskExecuted = NativeIntentHandler.playSpotifySong(context, songQuery.ifBlank { "inaam" })
             }
             lowerText.contains("chrome") || lowerText.contains("क्रोम") || lowerText.contains("google") -> {
                 jarvisAnswer = "Opening Chrome browser!"

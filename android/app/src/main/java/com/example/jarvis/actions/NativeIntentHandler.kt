@@ -210,6 +210,51 @@ object NativeIntentHandler {
         }
     }
 
+    fun playSpotifySong(context: Context, songQuery: String): Boolean {
+        return try {
+            val query = songQuery.ifBlank { "inaam" }
+            Log.d(TAG, "⚡ Launching Spotify Media Play Intent for: '$query'")
+
+            // 1. Try Android MediaStore PLAY_FROM_SEARCH Intent for Spotify
+            val intent = Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                putExtra(android.provider.MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                putExtra(android.provider.MediaStore.EXTRA_MEDIA_TITLE, query)
+                putExtra(android.app.SearchManager.QUERY, query)
+                setPackage("com.spotify.music")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+
+            // 2. Accessibility Service Backup: Tap top result card on Spotify after 2.0s
+            val service = com.example.jarvis.service.JarvisAutomationService.instance
+            if (service != null) {
+                Thread {
+                    try {
+                        Thread.sleep(2000L) // Wait for Spotify UI to render
+                        val root = service.rootInActiveWindow
+                        if (root != null) {
+                            Log.d(TAG, "🤖 Accessibility: Tapping Spotify top result for '$query'...")
+                            val clicked = service.clickByText(root, query) ||
+                                    service.clickByText(root, "Play") ||
+                                    service.clickById(root, "com.spotify.music:id/play_button")
+                            
+                            if (!clicked) {
+                                Log.d(TAG, "🤖 Node tap failed, performing Spotify Accessibility gesture tap at (540, 520)...")
+                                service.clickCoordinates(540f, 520f)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Spotify auto-play tap failed", e)
+                    }
+                }.start()
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error playing Spotify song", e)
+            openApp(context, "com.spotify.music", "Spotify")
+        }
+    }
+
     fun sendWhatsAppMessage(context: Context, nameOrNumber: String?, message: String): Boolean {
         return try {
             val contactName = nameOrNumber ?: "Sagar"
