@@ -207,10 +207,22 @@ class JarvisVoiceEngine(
                         onTranscript(userText, jarvisAnswer)
 
                         // Double-Layer Action Execution:
+                        // Check for multi-step UI Automation steps
+                        val stepsArray = if (json.has("automation_steps") && !json.isNull("automation_steps")) json.optJSONArray("automation_steps") else null
+                        if (stepsArray != null && stepsArray.length() > 0) {
+                            val service = com.example.jarvis.service.JarvisAutomationService.instance
+                            if (service != null) {
+                                Log.d(TAG, "🤖 Executing ${stepsArray.length()} UI Automation steps via AccessibilityService...")
+                                taskExecuted = service.executeAutomationSteps(stepsArray)
+                            } else {
+                                Log.w(TAG, "JarvisAutomationService is NOT enabled in Settings!")
+                            }
+                        }
+
                         // 1. Try Gemini AI action object
                         val actionObj = if (json.has("action") && !json.isNull("action")) json.optJSONObject("action") else null
                         
-                        if (actionObj != null) {
+                        if (!taskExecuted && actionObj != null) {
                             val actionType = actionObj.optString("type", "")
                             val actionTarget = actionObj.optString("target", "")
                             Log.d(TAG, "⚡ Executing AI action: type=$actionType, target=$actionTarget")

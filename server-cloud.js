@@ -202,16 +202,20 @@ Respond ONLY in valid JSON format:
       let raw = data.candidates[0].content.parts[0].text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
       try {
         const parsed = JSON.parse(raw);
-        return { response: parsed.response || localResponse, action: parsed.action || localAction };
+        return { 
+          response: parsed.response || localResponse, 
+          action: parsed.action || localAction,
+          automation_steps: parsed.automation_steps || null
+        };
       } catch (_) {
-        return { response: raw, action: localAction };
+        return { response: raw, action: localAction, automation_steps: null };
       }
     }
     console.warn('[Gemini API Warning] Unexpected structure or error response:', JSON.stringify(data));
-    return { response: localResponse, action: localAction };
+    return { response: localResponse, action: localAction, automation_steps: null };
   } catch (e) {
     console.error('[Gemini Error]', e);
-    return { response: localResponse, action: localAction };
+    return { response: localResponse, action: localAction, automation_steps: null };
   }
 }
 
